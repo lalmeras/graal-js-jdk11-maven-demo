@@ -40,13 +40,18 @@
  */
 package com.mycompany.app;
 
-import org.graalvm.polyglot.Context;
-import org.graalvm.polyglot.Value;
-import javax.script.ScriptEngineManager;
-import javax.script.ScriptEngine;
-import javax.script.Invocable;
 import java.io.IOException;
+import java.util.function.Consumer;
+
+import javax.script.Invocable;
+import javax.script.ScriptEngine;
+import javax.script.ScriptEngineManager;
+import javax.script.ScriptException;
+
+import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Source;
+import org.mozilla.javascript.Function;
+import org.mozilla.javascript.Scriptable;
 
 /**
  * Simple benchmark for Graal.js via GraalVM Polyglot Context and ScriptEngine.
@@ -115,27 +120,17 @@ public class App {
         benchGraalPolyglotContext();
         benchGraalScriptEngine();
         benchNashornScriptEngine();
+        benchRhinoScriptEngine();
     }
 
     static long benchGraalPolyglotContext() throws IOException {
         System.out.println("=== Graal.js via org.graalvm.polyglot.Context === ");
-        long took = 0;
         try (Context context = Context.create()) {
-            context.eval(Source.newBuilder("js", SOURCE, "src.js").build());
-            Value primesMain = context.getBindings("js").getMember("primesMain");
-            System.out.println("warming up ...");
-            for (int i = 0; i < WARMUP; i++) {
-                primesMain.execute();
-            }
-            System.out.println("warmup finished, now measuring");
-            for (int i = 0; i < ITERATIONS; i++) {
-                long start = System.currentTimeMillis();
-                primesMain.execute();
-                took = System.currentTimeMillis() - start;
-                System.out.println("iteration: " + took);
-            }
-        } // context.close() is automatic
-        return took;
+            return benchScriptEngineIntl(
+                	i -> { try { context.eval(Source.newBuilder("js", i, "src.js").build()); } catch (IOException e) { throw new IllegalStateException(e); } },
+                	i -> context.getBindings("js").getMember(i)::execute
+            );
+        }
     }
 
     static long benchNashornScriptEngine() throws IOException {
@@ -145,7 +140,10 @@ public class App {
             System.out.println("*** Nashorn not found ***");
             return 0;
         } else {
-            return benchScriptEngineIntl(nashornEngine);
+            return benchScriptEngineIntl(
+            	i -> { try { nashornEngine.eval(i); } catch (ScriptException e) { throw new IllegalStateException(e); } },
+            	i -> () -> { try { ((Invocable) nashornEngine).invokeFunction(i); } catch (ScriptException|NoSuchMethodException e) { throw new IllegalStateException(e); } }
+            );
         }
     }
 
@@ -156,23 +154,41 @@ public class App {
             System.out.println("*** Graal.js not found ***");
             return 0;
         } else {
-            return benchScriptEngineIntl(graaljsEngine);
+            return benchScriptEngineIntl(
+            		i -> { try { graaljsEngine.eval(i); } catch (ScriptException e) { throw new IllegalStateException(e); } },
+                    	i -> () -> { try { ((Invocable) graaljsEngine).invokeFunction(i); } catch (ScriptException|NoSuchMethodException e) { throw new IllegalStateException(e); } }
+            );
         }
     }
 
-    private static long benchScriptEngineIntl(ScriptEngine eng) throws IOException {
+    static long benchRhinoScriptEngine() throws IOException {
+	System.out.println("=== Rhino via org.mozilla.javascript.Context ===");
+	org.mozilla.javascript.Context context = org.mozilla.javascript.Context.enter();
+	try {
+	    context.setLanguageVersion(org.mozilla.javascript.Context.VERSION_ES6);
+	    Scriptable scope = context.initStandardObjects();
+	    return benchScriptEngineIntl(
+		    i -> { context.evaluateString(scope, i, "", 1, null); },
+		    i -> () -> ((Function) scope.get(i, scope)).call(context, scope, null, new Object[0])
+	    );
+	} finally {
+	    org.mozilla.javascript.Context.exit();
+	}
+    }
+
+    private static long benchScriptEngineIntl(Consumer<String> eval, java.util.function.Function<String, Runnable> functionLookup) throws IOException {
         long took = 0L;
         try {
-            eng.eval(SOURCE);
-            Invocable inv = (Invocable) eng;
+            eval.accept(SOURCE);
             System.out.println("warming up ...");
+            Runnable function = functionLookup.apply("primesMain");
             for (int i = 0; i < WARMUP; i++) {
-                inv.invokeFunction("primesMain");
+        	function.run();
             }
             System.out.println("warmup finished, now measuring");
             for (int i = 0; i < ITERATIONS; i++) {
                 long start = System.currentTimeMillis();
-                inv.invokeFunction("primesMain");
+                function.run();
                 took = System.currentTimeMillis() - start;
                 System.out.println("iteration: " + (took));
             }
