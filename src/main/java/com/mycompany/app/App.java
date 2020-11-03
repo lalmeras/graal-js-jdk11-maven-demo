@@ -120,7 +120,7 @@ public class App {
         benchGraalPolyglotContext();
         benchGraalScriptEngine();
         benchNashornScriptEngine();
-        benchRhinoScriptEngine();
+        benchRhino();
     }
 
     static long benchGraalPolyglotContext() throws IOException {
@@ -161,7 +161,7 @@ public class App {
         }
     }
 
-    static long benchRhinoScriptEngine() throws IOException {
+    static long benchRhino() throws IOException {
 	System.out.println("=== Rhino via org.mozilla.javascript.Context ===");
 	org.mozilla.javascript.Context context = org.mozilla.javascript.Context.enter();
 	try {

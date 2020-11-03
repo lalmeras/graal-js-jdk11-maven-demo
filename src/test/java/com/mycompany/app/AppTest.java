@@ -41,6 +41,7 @@
 package com.mycompany.app;
 
 import static org.junit.Assert.fail;
+
 import org.junit.Assume;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -69,6 +70,11 @@ public class AppTest {
         if (nashorn < graalJS) {
             fail(String.format("Graal.js (%d ms) should be faster than Nashorn (%d ms).", graalJS, nashorn));
         }
+    }
+
+    @Test
+    public void testRhinoSpeed() throws Exception {
+        long rhino = App.benchRhino();
     }
 
     private void assertGraalVMOrJDK11() {
